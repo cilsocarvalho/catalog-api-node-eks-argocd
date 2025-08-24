@@ -41,15 +41,30 @@ Crie uma role IAM para OIDC do GitHub com permissões de **push no ECR**. Salve 
 ## 6) Variar ambientes
 Crie `envs/stage/values.yaml` e `envs/prod/values.yaml` e novas `Application`s em `argocd/apps/` apontando para cada uma. O fluxo é o mesmo: commit nos `values` dispara entrega.
 
-## 7) Segurança (resumo)
-- Dockerfile **não-root** + **HEALTHCHECK** + runtime **read-only** (via chart: `readOnlyRootFilesystem` e `emptyDir:/tmp`).
-- Probes (readiness/liveness), **requests/limits**, **HPA** e **PDB**.
-- NetworkPolicy básica (ajuste conforme tráfego).
-- (Opcional) Kyverno para exigir assinatura Cosign e policies endurecidas.
+## 7) Segurança
+- Dockerfile **não-root** + **HEALTHCHECK** + runtime **read-only**
+- **Autenticação básica** nos endpoints de produtos
+- **TLS/HTTPS** configurado no Ingress com certificado ACM
+- **NetworkPolicy restritiva** (apenas tráfego necessário)
+- **ArgoCD project** com permissões limitadas
+- Probes (startup/readiness/liveness), **requests/limits**, **HPA** e **PDB**
+- **Validação de entrada** e tratamento de erros melhorado
 
 ## Endpoints
-- `GET /`      → metadados
-- `GET /health`→ saúde
-- `GET /products` e `/products/:id`
+- `GET /`      → metadados (público)
+- `GET /health`→ saúde (público)
+- `GET /products` → lista produtos (requer auth)
+- `GET /products/:id` → produto específico (requer auth)
+
+## Ambientes Configurados
+- **Dev**: `envs/dev/values.yaml` - 2 replicas, sync automático
+- **Stage**: `envs/stage/values.yaml` - 3 replicas, sync automático  
+- **Prod**: `envs/prod/values.yaml` - 5 replicas, sync manual
+
+## Arquivos Adicionados
+- `.gitignore`, `.dockerignore`, `.eslintrc.js`
+- `setup.md` - guia de configuração detalhado
+- Configurações para stage e prod
+- Melhorias de segurança e tratamento de erros
 
 Pronto! Agora cada commit na `main` atualiza a imagem no ECR, muda o `values.yaml` e o **ArgoCD** faz o deploy no **EKS** automaticamente.

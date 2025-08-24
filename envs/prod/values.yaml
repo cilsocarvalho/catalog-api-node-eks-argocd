@@ -1,0 +1,34 @@
+image:
+  repository: 540828371641.dkr.ecr.sa-east-1.amazonaws.com/catalog-api
+  tag: "prod"
+
+ingress:
+  hosts:
+    - host: api.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: catalog-api-prod-tls
+      hosts:
+        - api.example.com
+
+replicaCount: 5
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+  limits:
+    cpu: "2000m"
+    memory: "2Gi"
+
+hpa:
+  enabled: true
+  minReplicas: 5
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 50
+
+pdb:
+  enabled: true
+  minAvailable: 3

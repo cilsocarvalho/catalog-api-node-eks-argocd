@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: catalog-dev
+  name: catalog-prod
   namespace: argocd
 spec:
   project: portfolio
@@ -10,13 +10,15 @@ spec:
     targetRevision: main
     path: charts/catalog-api
     helm:
-      releaseName: catalog-dev
+      releaseName: catalog-prod
       valueFiles:
-        - ../../envs/dev/values.yaml
+        - ../../envs/prod/values.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: catalog-dev
+    namespace: catalog-prod
   syncPolicy:
     automated:
-      prune: true
-      selfHeal: true
+      prune: false
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true

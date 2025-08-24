@@ -1,0 +1,30 @@
+image:
+  repository: 540828371641.dkr.ecr.sa-east-1.amazonaws.com/catalog-api
+  tag: "stage"
+
+ingress:
+  hosts:
+    - host: api.stage.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: catalog-api-stage-tls
+      hosts:
+        - api.stage.example.com
+
+replicaCount: 3
+
+resources:
+  requests:
+    cpu: "200m"
+    memory: "256Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+hpa:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60

@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: catalog-dev
+  name: catalog-stage
   namespace: argocd
 spec:
   project: portfolio
@@ -10,12 +10,12 @@ spec:
     targetRevision: main
     path: charts/catalog-api
     helm:
-      releaseName: catalog-dev
+      releaseName: catalog-stage
       valueFiles:
-        - ../../envs/dev/values.yaml
+        - ../../envs/stage/values.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: catalog-dev
+    namespace: catalog-stage
   syncPolicy:
     automated:
       prune: true

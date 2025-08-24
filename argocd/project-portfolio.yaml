@@ -6,10 +6,25 @@ metadata:
 spec:
   description: "Projeto do portfolio - apps e operadores"
   sourceRepos:
-    - '*'
+    - 'https://github.com/cilsocarvalho/catalog-api-node-eks-argocd.git'
   destinations:
-    - namespace: '*'
+    - namespace: 'catalog-*'
+      server: https://kubernetes.default.svc
+    - namespace: 'argocd'
       server: https://kubernetes.default.svc
   clusterResourceWhitelist:
-    - group: '*'
-      kind: '*'
+    - group: ''
+      kind: 'Namespace'
+  namespaceResourceWhitelist:
+    - group: 'apps'
+      kind: 'Deployment'
+    - group: ''
+      kind: 'Service'
+    - group: 'networking.k8s.io'
+      kind: 'Ingress'
+    - group: 'networking.k8s.io'
+      kind: 'NetworkPolicy'
+    - group: 'autoscaling'
+      kind: 'HorizontalPodAutoscaler'
+    - group: 'policy'
+      kind: 'PodDisruptionBudget'
