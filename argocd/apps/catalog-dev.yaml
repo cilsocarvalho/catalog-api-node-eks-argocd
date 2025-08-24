@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: catalog-dev
+  namespace: argocd
+spec:
+  project: portfolio
+  source:
+    repoURL: https://github.com/OWNER/REPO.git
+    targetRevision: main
+    path: charts/catalog-api
+    helm:
+      releaseName: catalog-dev
+      valueFiles:
+        - ../../envs/dev/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: catalog-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

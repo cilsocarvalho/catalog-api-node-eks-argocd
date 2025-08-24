@@ -1,0 +1,17 @@
+{
+  "name": "portfolio-catalog-api",
+  "version": "1.0.0",
+  "description": "Catalog API (Node.js/Express) with GitOps (ArgoCD + Helm)",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "jest --runInBand --coverage --silent"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
+  }
+}

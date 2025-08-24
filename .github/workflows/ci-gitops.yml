@@ -1,0 +1,43 @@
+name: ci-gitops
+on:
+  push:
+    branches: [ "main" ]
+jobs:
+  build-push-update-values:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: write   # necessário para commit de volta
+    env:
+      AWS_REGION: sa-east-1
+      ECR_REPO: ACCOUNT_ID.dkr.ecr.sa-east-1.amazonaws.com/catalog-api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push image
+        run: |
+          docker build -t $ECR_REPO:${{ github.sha }} .
+          docker push $ECR_REPO:${{ github.sha }}
+
+      - name: Update envs/dev/values.yaml with new tag
+        run: |
+          sed -i 's/^  tag: .*/  tag: \"'${{ github.sha }}'\"/' envs/dev/values.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add envs/dev/values.yaml
+          git commit -m "GitOps: update image tag to ${{ github.sha }}"
+          git push
