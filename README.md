@@ -34,7 +34,7 @@ git push ─▶ GitHub Actions ─▶ docker build ─▶ Amazon ECR
 | `charts/catalog-api/` | Helm chart: Deployment, Service, Ingress, HPA, PDB, NetworkPolicy |
 | `envs/dev`, `envs/stage`, `envs/prod` | Per-environment values (the files GitOps changes) |
 | `argocd/` | Argo CD project, root application and one Application per environment |
-| `.github/workflows/ci-gitops.yml` | Build, push to ECR, bump the dev image tag |
+| `.github/workflows/ci-gitops.yml` | Lint, tests, Helm render and image build; then push to ECR and bump the dev image tag |
 
 ## Run locally
 
@@ -51,15 +51,15 @@ make test
    - Install Argo CD: `kubectl create ns argocd && kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml`
    - Install the AWS Load Balancer Controller (Ingress class `alb`).
    - Optional: External Secrets and Kyverno.
-2. **Point the repo at your account**: set your AWS account ID and region in `charts/catalog-api/values.yaml`, `envs/*/values.yaml` and `.github/workflows/ci-gitops.yml`, and your `OWNER/REPO` in `argocd/root-app.yaml` and `argocd/apps/*.yaml`.
-3. **Create the CI role**: an IAM role trusted by GitHub OIDC with permission to push to ECR. Save its ARN as the `AWS_ROLE_TO_ASSUME` repository secret.
+2. **Point the repo at your account**: replace the example account `111122223333` in `charts/catalog-api/values.yaml` and `envs/*/values.yaml`, and set your `OWNER/REPO` in `argocd/root-app.yaml` and `argocd/apps/*.yaml`.
+3. **Connect CI to AWS**: create an IAM role trusted by GitHub OIDC with permission to push to ECR. In the repository settings, save its ARN as the `AWS_ROLE_TO_ASSUME` secret and add the variables `AWS_ACCOUNT_ID` and `AWS_REGION` (default `sa-east-1`). Until `AWS_ACCOUNT_ID` exists the pipeline runs lint, tests, Helm rendering and a Docker build only.
 4. **Bootstrap Argo CD**
    ```bash
    kubectl apply -f argocd/project-portfolio.yaml
    kubectl apply -f argocd/root-app.yaml
    ```
    The root application creates one Application per environment.
-5. **Ship a change**: push to `main`. The pipeline builds `catalog-api:<commit-sha>`, pushes it to ECR and commits the tag to `envs/dev/values.yaml`; Argo CD rolls it out to EKS.
+5. **Ship a change**: push to `main`. After the tests pass, the pipeline builds `catalog-api:<commit-sha>`, pushes it to ECR and commits the tag to `envs/dev/values.yaml`; Argo CD rolls it out to EKS.
 
 See [setup.md](setup.md) for certificates, namespaces and application secrets.
 
@@ -77,5 +77,5 @@ See [setup.md](setup.md) for certificates, namespaces and application secrets.
 |---|---|
 | `GET /` | Public, service metadata |
 | `GET /health` | Public, health check |
-| `GET /products` | Basic auth, product list |
+| `GET /products` | Basic auth, product list (`API_USER` / `API_PASSWORD` from a Kubernetes Secret) |
 | `GET /products/:id` | Basic auth, single product |

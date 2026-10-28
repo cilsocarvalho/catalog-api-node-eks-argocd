@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const express = require('express');
 const app = express();
 app.disable('x-powered-by');
@@ -9,11 +10,29 @@ const products = [
   { id: 3, name: 'Mechanical Keyboard', price: 189.00, currency: 'USD' }
 ];
 
-// Basic auth middleware for protected routes
+// Basic auth for the product routes. Credentials come from API_USER and
+// API_PASSWORD (a Kubernetes Secret in the cluster); without them every
+// protected request is rejected.
+const safeEqual = (a, b) => {
+  const left = Buffer.from(String(a));
+  const right = Buffer.from(String(b));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+};
+
 const basicAuth = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Basic ')) {
-    return res.status(401).json({ error: 'unauthorized' });
+  const user = process.env.API_USER;
+  const password = process.env.API_PASSWORD;
+  const header = req.headers.authorization || '';
+  if (!user || !password || !header.startsWith('Basic ')) {
+    return res.status(401).set('WWW-Authenticate', 'Basic realm="catalog"').json({ error: 'unauthorized' });
+  }
+  const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
+  const separator = decoded.indexOf(':');
+  const ok = separator > 0 &&
+    safeEqual(decoded.slice(0, separator), user) &&
+    safeEqual(decoded.slice(separator + 1), password);
+  if (!ok) {
+    return res.status(401).set('WWW-Authenticate', 'Basic realm="catalog"').json({ error: 'unauthorized' });
   }
   next();
 };

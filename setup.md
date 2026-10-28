@@ -10,7 +10,7 @@
 ## 1. Create the ECR repository
 
 ```bash
-aws ecr create-repository --repository-name catalog-api --region us-east-1
+aws ecr create-repository --repository-name catalog-api --region sa-east-1
 ```
 
 ## 2. Request a TLS certificate (optional)
@@ -27,8 +27,12 @@ Replace `CERTIFICATE_ID` in the values.yaml files with the certificate ARN.
 
 ## 3. Configure GitHub secrets
 
-In the GitHub repository, set:
-- `AWS_ROLE_TO_ASSUME`: ARN of the IAM role trusted by GitHub OIDC
+In the GitHub repository settings (Secrets and variables > Actions), set:
+- Secret `AWS_ROLE_TO_ASSUME`: ARN of the IAM role trusted by GitHub OIDC
+- Variable `AWS_ACCOUNT_ID`: your 12-digit account ID
+- Variable `AWS_REGION` (optional): defaults to `sa-east-1`
+
+Until `AWS_ACCOUNT_ID` is set, the pipeline only runs lint, tests and a Docker build, so forks stay green.
 
 ## 4. Create namespaces
 
@@ -45,18 +49,24 @@ kubectl create namespace catalog-prod
 kubectl create secret generic catalog-api-secrets \
   --from-literal=DATABASE_URL="postgresql://user:pass@host:5432/db" \
   --from-literal=REDIS_URL="redis://host:6379" \
+  --from-literal=API_USER="catalog" \
+  --from-literal=API_PASSWORD="$(openssl rand -base64 24)" \
   -n catalog-dev
 
 # Stage  
 kubectl create secret generic catalog-api-secrets \
   --from-literal=DATABASE_URL="postgresql://user:pass@host:5432/db" \
   --from-literal=REDIS_URL="redis://host:6379" \
+  --from-literal=API_USER="catalog" \
+  --from-literal=API_PASSWORD="$(openssl rand -base64 24)" \
   -n catalog-stage
 
 # Prod
 kubectl create secret generic catalog-api-secrets \
   --from-literal=DATABASE_URL="postgresql://user:pass@host:5432/db" \
   --from-literal=REDIS_URL="redis://host:6379" \
+  --from-literal=API_USER="catalog" \
+  --from-literal=API_PASSWORD="$(openssl rand -base64 24)" \
   -n catalog-prod
 ```
 

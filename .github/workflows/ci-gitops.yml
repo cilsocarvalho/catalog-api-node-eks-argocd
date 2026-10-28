@@ -1,49 +1,84 @@
 name: ci-gitops
+
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - "**.md"
+      - "envs/**"
+  pull_request:
+
+permissions:
+  contents: read
+
 jobs:
-  build-push-update-values:
+  test:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: write   # necessário para commit de volta
-    env:
-      AWS_REGION: us-east-1
-      ECR_REPO: 540828371641.dkr.ecr.us-east-1.amazonaws.com/catalog-api
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
+          node-version: 20
+          cache: npm
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Install
+        run: npm ci
 
-      - name: Configure AWS (OIDC)
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Render the Helm chart for every environment
+        run: |
+          for env in dev stage prod; do
+            helm template catalog-api charts/catalog-api -f envs/$env/values.yaml > /dev/null
+          done
+
+      - name: Build the image
+        run: docker build -t catalog-api:${{ github.sha }} .
+
+  # Runs only when the AWS account is configured (repository variable AWS_ACCOUNT_ID
+  # and secret AWS_ROLE_TO_ASSUME), so forks and pull requests stop at the test job.
+  deliver:
+    needs: test
+    if: github.event_name == 'push' && vars.AWS_ACCOUNT_ID != ''
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # GitHub OIDC token for AWS
+      contents: write   # commit the new image tag back to envs/dev
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'sa-east-1' }}
+      ECR_REPO: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION || 'sa-east-1' }}.amazonaws.com/catalog-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to ECR
+      - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push image
+      - name: Build and push the image
         run: |
-          set -e
-          docker build -t $ECR_REPO:${{ github.sha }} . && \
-          docker push $ECR_REPO:${{ github.sha }}
+          docker build -t "$ECR_REPO:${{ github.sha }}" .
+          docker push "$ECR_REPO:${{ github.sha }}"
 
-      - name: Update envs/dev/values.yaml with new tag
+      - name: Point envs/dev at the new image
         run: |
-          set -e
-          sed -i 's/^  tag: .*/  tag: \"'${{ github.sha }}'\"/' envs/dev/values.yaml
-          if git diff --exit-code envs/dev/values.yaml; then
+          sed -i "s|^  repository: .*|  repository: $ECR_REPO|" envs/dev/values.yaml
+          sed -i "s|^  tag: .*|  tag: \"${{ github.sha }}\"|" envs/dev/values.yaml
+          if git diff --quiet envs/dev/values.yaml; then
             echo "No changes to commit"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add envs/dev/values.yaml
-          git commit -m "GitOps: update image tag to ${{ github.sha }}"
+          git commit -m "gitops: dev image ${{ github.sha }}"
           git push
