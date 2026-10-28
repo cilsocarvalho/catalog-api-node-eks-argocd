@@ -1,70 +1,81 @@
-# Monorepo — Catalog API + Helm + ArgoCD (GitOps)
+# Catalog API on Amazon EKS — GitOps with Argo CD
 
-Este repositório contém **tudo**: código da API (Node.js/Express), **Dockerfile**, **Helm chart**, diretório **envs/** (valores por ambiente), arquivos do **ArgoCD** (App-of-Apps) e **pipeline CI** que builda a imagem, publica no **ECR** e **atualiza o values** para o Argo sincronizar.
+A complete GitOps delivery path for a small Node.js/Express API on Amazon EKS: the application code, its Dockerfile, a Helm chart, per-environment values and the Argo CD (app of apps) definitions all live in this one repository. A GitHub Actions pipeline builds the image, pushes it to Amazon ECR through GitHub OIDC (no static AWS keys) and commits the new tag back to `envs/dev/values.yaml`, which Argo CD then syncs to the cluster.
 
-## 1) Rodar local
+```
+git push ─▶ GitHub Actions ─▶ docker build ─▶ Amazon ECR
+                 │                                 ▲
+                 └─ commit new tag to envs/dev ─┐  │ pull image
+                                                ▼  │
+                          Argo CD (app of apps) ─▶ Amazon EKS
+                                                    ├─ catalog-dev   (auto sync)
+                                                    ├─ catalog-stage (auto sync)
+                                                    └─ catalog-prod  (manual sync)
+```
+
+**Stack:** Amazon EKS · Argo CD · Helm · Amazon ECR · GitHub Actions with OIDC · AWS Load Balancer Controller (ALB Ingress) · ACM · Node.js/Express · Jest
+
+## What it demonstrates
+
+- **GitOps end to end** — Git is the only way to change what runs; CI never talks to the cluster.
+- **Keyless CI** — GitHub Actions assumes an IAM role through OIDC to push to ECR.
+- **Promotion by environment** — dev and stage sync automatically, prod syncs manually.
+- **Production-grade workload settings** — startup, readiness and liveness probes, requests and limits, HPA, PodDisruptionBudget and a restrictive NetworkPolicy.
+- **Hardened container** — non-root user, read-only root filesystem and a HEALTHCHECK.
+- **Scoped Argo CD project** — the application can only deploy to its own namespaces.
+- **TLS at the edge** — HTTPS on the ALB Ingress with an ACM certificate.
+
+## Repository layout
+
+| Path | Contents |
+|---|---|
+| `src/`, `tests/` | Express API and Jest tests |
+| `Dockerfile`, `Makefile` | Container build and local commands |
+| `charts/catalog-api/` | Helm chart: Deployment, Service, Ingress, HPA, PDB, NetworkPolicy |
+| `envs/dev`, `envs/stage`, `envs/prod` | Per-environment values — the files GitOps changes |
+| `argocd/` | Argo CD project, root application and one Application per environment |
+| `.github/workflows/ci-gitops.yml` | Build, push to ECR, bump the dev image tag |
+
+## Run locally
+
 ```bash
 make build TAG=dev
 make run   TAG=dev   # http://localhost:8080
 make test
 ```
 
-## 2) Preparar Infra (uma vez)
-- **ECR**: crie `catalog-api` em `sa-east-1`.
-- **ArgoCD**: instale no cluster (`kubectl create ns argocd && kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml`).
-- **ALB Controller**: instalado (Ingress class `alb`).
-- (Opcional) **External Secrets** + **Kyverno** (pode ser via Argo ou fora).
+## Deploy to your own AWS account
 
-## 3) Configure o repo
-- Substitua `ACCOUNT_ID` em:
-  - `charts/catalog-api/values.yaml`
-  - `envs/dev/values.yaml`
-  - `.github/workflows/ci-gitops.yml`
-- Substitua `OWNER/REPO` em:
-  - `argocd/apps/catalog-dev.yaml`
-  - `argocd/root-app.yaml`
+1. **Prepare the platform (once)**
+   - Create an ECR repository named `catalog-api`.
+   - Install Argo CD: `kubectl create ns argocd && kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml`
+   - Install the AWS Load Balancer Controller (Ingress class `alb`).
+   - Optional: External Secrets and Kyverno.
+2. **Point the repo at your account** — set your AWS account ID and region in `charts/catalog-api/values.yaml`, `envs/*/values.yaml` and `.github/workflows/ci-gitops.yml`, and your `OWNER/REPO` in `argocd/root-app.yaml` and `argocd/apps/*.yaml`.
+3. **Create the CI role** — an IAM role trusted by GitHub OIDC with permission to push to ECR. Save its ARN as the `AWS_ROLE_TO_ASSUME` repository secret.
+4. **Bootstrap Argo CD**
+   ```bash
+   kubectl apply -f argocd/project-portfolio.yaml
+   kubectl apply -f argocd/root-app.yaml
+   ```
+   The root application creates one Application per environment.
+5. **Ship a change** — push to `main`. The pipeline builds `catalog-api:<commit-sha>`, pushes it to ECR and commits the tag to `envs/dev/values.yaml`; Argo CD rolls it out to EKS.
 
-## 4) Bootstrap do ArgoCD
-```bash
-kubectl apply -f argocd/project-portfolio.yaml
-kubectl apply -f argocd/root-app.yaml
-```
-Isso criará o app `catalog-dev` apontando para `charts/catalog-api` + `envs/dev/values.yaml`.
+See [setup.md](setup.md) for certificates, namespaces and application secrets.
 
-## 5) CI GitOps (push → EKS)
-Crie uma role IAM para OIDC do GitHub com permissões de **push no ECR**. Salve o ARN em `AWS_ROLE_TO_ASSUME` (Secret do GitHub). Ao dar push na `main`:
-- a Action builda `ECR_REPO:${{ github.sha }}`,
-- faz **push**,
-- atualiza `envs/dev/values.yaml` com a nova **tag** e faz commit,
-- o ArgoCD sincroniza e entrega no EKS.
+## Environments
 
-## 6) Variar ambientes
-Crie `envs/stage/values.yaml` e `envs/prod/values.yaml` e novas `Application`s em `argocd/apps/` apontando para cada uma. O fluxo é o mesmo: commit nos `values` dispara entrega.
+| Environment | Values file | Replicas | Sync |
+|---|---|---|---|
+| Dev | `envs/dev/values.yaml` | 2 | Automatic |
+| Stage | `envs/stage/values.yaml` | 3 | Automatic |
+| Prod | `envs/prod/values.yaml` | 5 | Manual |
 
-## 7) Segurança
-- Dockerfile **não-root** + **HEALTHCHECK** + runtime **read-only**
-- **Autenticação básica** nos endpoints de produtos
-- **TLS/HTTPS** configurado no Ingress com certificado ACM
-- **NetworkPolicy restritiva** (apenas tráfego necessário)
-- **ArgoCD project** com permissões limitadas
-- Probes (startup/readiness/liveness), **requests/limits**, **HPA** e **PDB**
-- **Validação de entrada** e tratamento de erros melhorado
+## API
 
-## Endpoints
-- `GET /`      → metadados (público)
-- `GET /health`→ saúde (público)
-- `GET /products` → lista produtos (requer auth)
-- `GET /products/:id` → produto específico (requer auth)
-
-## Ambientes Configurados
-- **Dev**: `envs/dev/values.yaml` - 2 replicas, sync automático
-- **Stage**: `envs/stage/values.yaml` - 3 replicas, sync automático  
-- **Prod**: `envs/prod/values.yaml` - 5 replicas, sync manual
-
-## Arquivos Adicionados
-- `.gitignore`, `.dockerignore`, `.eslintrc.js`
-- `setup.md` - guia de configuração detalhado
-- Configurações para stage e prod
-- Melhorias de segurança e tratamento de erros
-
-Pronto! Agora cada commit na `main` atualiza a imagem no ECR, muda o `values.yaml` e o **ArgoCD** faz o deploy no **EKS** automaticamente.
+| Endpoint | Access |
+|---|---|
+| `GET /` | Public — service metadata |
+| `GET /health` | Public — health check |
+| `GET /products` | Basic auth — product list |
+| `GET /products/:id` | Basic auth — single product |

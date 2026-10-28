@@ -1,36 +1,36 @@
 # Setup Guide
 
-## Pré-requisitos
+## Prerequisites
 
-1. **AWS CLI** configurado com credenciais
-2. **kubectl** configurado para o cluster EKS
-3. **ArgoCD** instalado no cluster
-4. **ALB Controller** instalado no cluster
+1. **AWS CLI** configured with credentials
+2. **kubectl** pointing at the EKS cluster
+3. **Argo CD** installed in the cluster
+4. **AWS Load Balancer Controller** installed in the cluster
 
-## 1. Configurar ECR
+## 1. Create the ECR repository
 
 ```bash
 aws ecr create-repository --repository-name catalog-api --region us-east-1
 ```
 
-## 2. Configurar Certificado SSL (opcional)
+## 2. Request a TLS certificate (optional)
 
 ```bash
-# Solicitar certificado no ACM
+# Request a certificate in ACM
 aws acm request-certificate \
   --domain-name "*.dev.example.com" \
   --validation-method DNS \
   --region sa-east-1
 ```
 
-Substitua `CERTIFICATE_ID` nos arquivos values.yaml com o ARN do certificado.
+Replace `CERTIFICATE_ID` in the values.yaml files with the certificate ARN.
 
-## 3. Configurar Secrets do GitHub
+## 3. Configure GitHub secrets
 
-No repositório GitHub, configure:
-- `AWS_ROLE_TO_ASSUME`: ARN da role IAM para OIDC
+In the GitHub repository, set:
+- `AWS_ROLE_TO_ASSUME`: ARN of the IAM role trusted by GitHub OIDC
 
-## 4. Criar Namespaces
+## 4. Create namespaces
 
 ```bash
 kubectl create namespace catalog-dev
@@ -38,7 +38,7 @@ kubectl create namespace catalog-stage
 kubectl create namespace catalog-prod
 ```
 
-## 5. Criar Secrets da Aplicação
+## 5. Create application secrets
 
 ```bash
 # Dev
@@ -60,25 +60,25 @@ kubectl create secret generic catalog-api-secrets \
   -n catalog-prod
 ```
 
-## 6. Deploy ArgoCD Applications
+## 6. Deploy the Argo CD applications
 
 ```bash
 kubectl apply -f argocd/project-portfolio.yaml
 kubectl apply -f argocd/root-app.yaml
 ```
 
-## 7. Testar API
+## 7. Test the API
 
 ```bash
-# Sem autenticação (health check)
+# No authentication (health check)
 curl https://api.dev.example.com/health
 
-# Com autenticação básica
+# With basic authentication
 curl -u "user:pass" https://api.dev.example.com/products
 ```
 
-## Ambientes
+## Environments
 
-- **Dev**: Sync automático, 2 replicas
-- **Stage**: Sync automático, 3 replicas  
-- **Prod**: Sync manual, 5 replicas, PDB configurado
+- **Dev**: Automatic sync, 2 replicas
+- **Stage**: Automatic sync, 3 replicas  
+- **Prod**: Manual sync, 5 replicas, PodDisruptionBudget
